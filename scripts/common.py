@@ -104,6 +104,25 @@ def default_ef_search_list():
     )
 
 
+def qps_at_recall(df, recall_col, qps_col, target_recall):
+    """Interpolates the QPS a (recall, qps) curve achieves at `target_recall`.
+
+    This is the methodologically correct way to compare two methods'
+    throughput: at matched *recall*, not matched *ef_search*. Two graphs
+    with different edge sets reach a given recall at different ef values,
+    so comparing their QPS at the same raw ef number silently compares them
+    at two different operating points and can produce a misleading gap in
+    either direction. Returns None if the curve never reaches target_recall.
+    """
+    r = df[recall_col].to_numpy()
+    q = df[qps_col].to_numpy()
+    order = np.argsort(r)
+    r, q = r[order], q[order]
+    if target_recall > r.max():
+        return None
+    return float(np.interp(target_recall, r, q))
+
+
 def resolve_dataset_path(datasets_dir, dataset_key, dataset_map):
     """Maps a friendly dataset key (e.g. 'LAION') through `dataset_map` to
     its .hdf5 path under `datasets_dir`, or None if the file is missing."""

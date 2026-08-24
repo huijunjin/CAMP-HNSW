@@ -10,6 +10,16 @@ redundant shortcut generation, so CAMP-HNSW's QPS should track the base
 HNSW curve almost exactly rather than paying an "unnecessary densification"
 penalty.
 
+IMPORTANT for interpreting the output: "zero penalty" is a claim about QPS
+at *matched recall*, not at matched ef_search. CAMP-HNSW's graph has a
+different (slightly higher) average degree than base HNSW, so at the same
+raw ef value the two are doing different amounts of work; comparing them
+ef-for-ef can show an apparent regression at low ef that has nothing to do
+with routing quality and disappears (or reverses) at the practical
+recall targets (95-99%) the paper actually reports. This script computes
+the recall-matched comparison automatically (`recall_matched_summary.csv`)
+so nobody has to redo this by hand.
+
 Example:
     python scripts/run_figure8_id_robustness.py \\
         --datasets-dir ./dataset_benchmark \\
@@ -19,6 +29,7 @@ import argparse
 import os
 
 import common
+import pandas as pd
 from run_figure4_main_comparison import run_dataset
 
 
@@ -56,11 +67,50 @@ def build_arg_parser():
     return p
 
 
+def report_recall_matched_summary(key, args, targets=(90.0, 95.0, 97.0, 99.0)):
+    """Reads the recall{k}_{key}_final_comparison.csv that run_dataset just
+    wrote and prints/saves the recall-matched QPS comparison -- the number
+    that actually supports (or refutes) "zero routing penalty," as opposed
+    to a same-ef comparison which compares the two graphs at different
+    operating points and can look like a regression that isn't real."""
+    rows = []
+    for k in args.k_values:
+        csv_path = os.path.join(args.output_dir, key, f"recall{k}_{key}_final_comparison.csv")
+        if not os.path.exists(csv_path):
+            continue
+        df = pd.read_csv(csv_path)
+        if "Recall_HNSW" not in df.columns or "Recall_CAMP-HNSW" not in df.columns:
+            continue  # HNSW or CAMP-HNSW curve missing (e.g. dataset file wasn't found)
+
+        print(f"\n  [Figure 8] Recall-matched QPS, {key} (k={k}):")
+        for target in targets:
+            hnsw_qps = common.qps_at_recall(df, "Recall_HNSW", "QPS_HNSW", target)
+            ours_qps = common.qps_at_recall(df, "Recall_CAMP-HNSW", "QPS_CAMP-HNSW", target)
+            if hnsw_qps is None or ours_qps is None:
+                print(f"    @Recall={target}%: not reached by one of the curves")
+                continue
+            gain_pct = (ours_qps - hnsw_qps) / hnsw_qps * 100
+            print(f"    @Recall={target}%: HNSW={hnsw_qps:.0f} QPS, CAMP-HNSW={ours_qps:.0f} QPS "
+                  f"({gain_pct:+.1f}%)")
+            rows.append({"Dataset": key, "k": k, "Recall_target_pct": target,
+                         "QPS_HNSW": round(hnsw_qps, 1), "QPS_CAMP-HNSW": round(ours_qps, 1),
+                         "Gain_pct": round(gain_pct, 1)})
+    return rows
+
+
 def main():
     args = build_arg_parser().parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
+
+    summary_rows = []
     for key in args.datasets:
         run_dataset(key, common.ID_DATASETS[key], args)
+        summary_rows.extend(report_recall_matched_summary(key, args))
+
+    if summary_rows:
+        out_path = os.path.join(args.output_dir, "recall_matched_summary.csv")
+        pd.DataFrame(summary_rows).to_csv(out_path, index=False)
+        print(f"\n[saved] {out_path}")
 
 
 if __name__ == "__main__":
