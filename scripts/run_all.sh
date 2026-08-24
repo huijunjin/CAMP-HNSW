@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
-# Reproduces the paper's main results end to end: builds the C++ engine if
-# needed, then runs the Table 5 ablation study, the Figure 4 main
-# comparison, and the Table 4 hardware profile, in that order.
+# Reproduces the paper's results end to end: builds the C++ engine if
+# needed, then runs every reproduction script in scripts/ in order --
+# Table 5, Figure 4, Figure 6, Figure 7, Figure 8, Figure 9, then Table 4.
 #
 # Usage:
 #   ./scripts/run_all.sh
 #   DATASETS_DIR=/path/to/datasets OUTPUT_DIR=/path/to/results ./scripts/run_all.sh
-#   ./scripts/run_all.sh --datasets LAION COCO   # forwarded to every sub-script
+#   ./scripts/run_all.sh --datasets LAION COCO
+#
+# Any extra arguments (e.g. `--datasets LAION COCO`, `--budget 500`) are
+# forwarded to every OOD-dataset script (Table 5, Figure 4/6/7/9, Table 4),
+# since they all share the same --datasets-dir / --datasets vocabulary
+# (Table 1's ImageNet/LAION/COCO/MainSearch). Figure 8 runs over the
+# separate in-distribution dataset pair (GloVe / ID-ImageNet) and is only
+# given --datasets-dir, since its --datasets choices differ.
 #
 # Datasets not present under DATASETS_DIR are skipped per-dataset with a
 # warning rather than aborting the whole run. Table 4 requires the Linux
@@ -42,7 +49,10 @@ if [ ! -d "$DATASETS_DIR" ]; then
     echo
     echo "[error] Datasets directory not found: $DATASETS_DIR"
     echo "        Download the benchmark .hdf5 files (Table 1) first, then either"
-    echo "        place them under ./dataset_benchmark or run:"
+    echo "        place them under ./dataset_benchmark, or generate a small synthetic"
+    echo "        set to sanity-check the pipeline:"
+    echo "          python scripts/generate_dummy_data.py"
+    echo "        or point at a real directory:"
     echo "          DATASETS_DIR=/path/to/datasets $0"
     exit 1
 fi
@@ -61,6 +71,22 @@ run_step "Table 5: Incremental Ablation Study" \
 
 run_step "Figure 4: Main Recall vs QPS Comparison" \
     "$REPO_ROOT/scripts/run_figure4_main_comparison.py" --output-dir "$OUTPUT_DIR/figure4"
+
+run_step "Figure 6: Cache Reordering Parameter Sensitivity" \
+    "$REPO_ROOT/scripts/run_figure6_kmeans_tuning.py" --output-dir "$OUTPUT_DIR/figure6"
+
+run_step "Figure 7: Shortcut Mining Pareto Frontier" \
+    "$REPO_ROOT/scripts/run_figure7_pareto_search.py" --output-dir "$OUTPUT_DIR/figure7"
+
+echo
+echo "############################################################"
+echo "# Figure 8: Zero Routing Penalty on ID Datasets"
+echo "############################################################"
+"$PYTHON_BIN" "$REPO_ROOT/scripts/run_figure8_id_robustness.py" \
+    --datasets-dir "$DATASETS_DIR" --output-dir "$OUTPUT_DIR/figure8"
+
+run_step "Figure 9: Data Efficiency vs Calibration Query Ratio" \
+    "$REPO_ROOT/scripts/run_figure9_query_ratio.py" --output-dir "$OUTPUT_DIR/figure9"
 
 echo
 echo "############################################################"

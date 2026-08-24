@@ -39,3 +39,16 @@
 
 # debug information files
 *.dwo
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.ipynb_checkpoints/
+
+# Reproduction script outputs / staged datasets (large, regenerable)
+/results/
+/dataset_benchmark/
+

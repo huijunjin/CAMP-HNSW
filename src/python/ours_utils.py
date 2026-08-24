@@ -38,13 +38,24 @@ def reorder_dataset_by_clustering(db, num_clusters=256, sample_ratio=0.05, n_ini
     if num_clusters is None:
         num_clusters = int(np.sqrt(num_elements))
 
+    # Production-scale datasets always have sample_size >> num_clusters (the
+    # default K=512 assumes millions of rows, see Sec. 3.3/4.6); on a much
+    # smaller dataset (e.g. a smoke-test run) MiniBatchKMeans would otherwise
+    # raise since it requires n_samples >= n_clusters. This clamp never
+    # triggers at the scales the paper evaluates.
+    sample_size = int(num_elements * sample_ratio)
+    if num_clusters > sample_size:
+        clamped = max(1, sample_size)
+        print(f"[Reordering] Warning: num_clusters ({num_clusters}) exceeds the training "
+              f"sample size ({sample_size}); clamping to {clamped} for this run.")
+        num_clusters = clamped
+
     print(f"[Reordering] Clustering dataset (K={num_clusters}, sample={int(sample_ratio*100)}%, "
           f"max_iter={max_iter}, n_init={n_init}, batch={batch_size})...")
     t0 = time.time()
 
     # Train centroids on a small subsample only (Sec. 3.3: this is a
     # hardware-alignment heuristic, not a clustering-quality objective).
-    sample_size = int(num_elements * sample_ratio)
     np.random.seed(42)
     sampled_indices = np.random.choice(num_elements, sample_size, replace=False)
     sampled_db = db[sampled_indices]
