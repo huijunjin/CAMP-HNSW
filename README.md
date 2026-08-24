@@ -99,17 +99,28 @@ This produces random vectors with no real OOD structure — the *numbers* are me
 
 | Paper name | `.hdf5` filename (goes in `dataset_benchmark/`) | Source |
 |---|---|---|
-| ImageNet | `imagenet-align-640-normalized.hdf5` | Text-to-image embeddings + query split generated via the **VIBE benchmark** toolkit — see the setup instructions below |
-| LAION | `LAION-512.hdf5` | VIBE benchmark, as above |
-| COCO | `coco-nomic-768-normalized.hdf5` | VIBE benchmark, as above |
-| GloVe (ID) | `glove-200-cosine-maphnsw.hdf5` | VIBE benchmark, as above (used as an in-distribution control; see the note below the conversion snippet) |
-| ImageNet-ID | `imagenet-clip-512-normalized-maphnsw.hdf5` | VIBE benchmark, as above (in-distribution counterpart to the ImageNet row) |
-| MainSearch | `MainSearch-11M.hdf5` | Large-scale industrial dataset introduced in NGFix (Hua et al., *Dynamically Fix Hardness for Efficient Approximate Nearest Neighbor Search*, PACMMOD 3(6), 2025), **publicly hosted on Zenodo: [zenodo.org/records/17257137](https://zenodo.org/records/17257137)**. See the setup instructions below. |
+| ImageNet | **`imagenet.hdf5`** | Text-to-image embeddings + query split generated via the **VIBE benchmark** toolkit — see the setup instructions below |
+| LAION | **`laion.hdf5`** | VIBE benchmark, as above |
+| COCO | **`coco.hdf5`** | VIBE benchmark, as above |
+| GloVe (ID) | **`glove.hdf5`** | Raw embeddings via VIBE, then **must be processed with `scripts/prepare_id_datasets.py`** — see below |
+| ImageNet-ID | **`imagenet_id.hdf5`** | Raw embeddings via VIBE, then **must be processed with `scripts/prepare_id_datasets.py`** — see below |
+| MainSearch | **`mainsearch.hdf5`** | Large-scale industrial dataset introduced in NGFix (Hua et al., *Dynamically Fix Hardness for Efficient Approximate Nearest Neighbor Search*, PACMMOD 3(6), 2025), **publicly hosted on Zenodo: [zenodo.org/records/17257137](https://zenodo.org/records/17257137)**. See the setup instructions below. |
+
+> ⚠️ **The filename must match exactly** (lowercase, no version suffix) — every script looks up datasets by this exact name under `--datasets-dir`. A mismatched name is not an error, it's a **silent skip**: the script just moves on to the next dataset, so double-check the name before assuming something is broken. `bash scripts/run_all.sh` also prints a startup checklist of which of these 6 files it did and didn't find, precisely to catch this.
 
 <details>
-<summary><strong>Real dataset setup instructions</strong> (VIBE toolkit for the first five, Zenodo + conversion for MainSearch)</summary>
+<summary><strong>Real dataset setup instructions</strong> (VIBE toolkit + ID preprocessing script, Zenodo for MainSearch)</summary>
 
-**Setting up ImageNet, LAION, COCO, GloVe, and ImageNet-ID (via VIBE):** these five datasets are all generated using the official **VIBE (Vector Index Benchmark for Embeddings)** toolkit — **[github.com/vector-index-bench/vibe](https://github.com/vector-index-bench/vibe)** (Jääsaari et al., [arXiv:2505.17810](https://arxiv.org/abs/2505.17810)). Clone that repository and follow its own README to download and generate each dataset's embeddings and query split; VIBE ships the download/generation tooling directly, so this is the authoritative source rather than any link we could mirror here. Once you have the resulting base vectors, test queries, ground truth, and calibration ("learn") queries, convert them into this repo's schema with the snippet below and save as the filenames listed in the table (e.g. `dataset_benchmark/LAION-512.hdf5`). For the two ID datasets (GloVe, ImageNet-ID), see the in-distribution note below the conversion snippet for how `learn`/`learn_neighbors` are derived.
+**Setting up ImageNet, LAION, COCO (via VIBE):** these three OOD datasets are generated using the official **VIBE (Vector Index Benchmark for Embeddings)** toolkit — **[github.com/vector-index-bench/vibe](https://github.com/vector-index-bench/vibe)** (Jääsaari et al., [arXiv:2505.17810](https://arxiv.org/abs/2505.17810)). Clone that repository and follow its own README to download and generate each dataset's embeddings and query split; VIBE ships the download/generation tooling directly, so this is the authoritative source rather than any link we could mirror here. Once you have the resulting base vectors, test queries, ground truth, and calibration ("learn") queries, convert them into this repo's schema with the snippet below and save as **exactly** `imagenet.hdf5` / `laion.hdf5` / `coco.hdf5`.
+
+**Setting up GloVe and ImageNet-ID:** these two datasets need one extra step, because they're *in-distribution* controls rather than a genuine OOD query stream — Sec. 4.1 of the paper builds them by reserving part of the base set itself as calibration queries.
+
+1. Get the raw base+test embeddings via VIBE (same toolkit and process as above), and save them under `dataset_benchmark/` as `glove-200-cosine.hdf5` and `imagenet-clip-512-normalized.hdf5` respectively (these are just the raw VIBE output at this stage — not yet in this repo's final schema).
+2. Run the preprocessing script, which holds out 200,000 base vectors as calibration queries and recomputes exact ground truth for everything against the reduced base:
+   ```bash
+   python scripts/prepare_id_datasets.py --datasets-dir ./dataset_benchmark
+   ```
+3. This writes out **`glove.hdf5`** and **`imagenet_id.hdf5`** in this repo's schema, ready for `run_figure8_id_robustness.py` / `run_all.sh`. See `python scripts/prepare_id_datasets.py --help` if your raw files ended up with different names (`--glove-raw-file`, `--imagenet-id-raw-file`) or you want a different calibration split size (`--num-learn`).
 
 **Setting up MainSearch:** the dataset is distributed on Zenodo as a set of split RAR archives (`mainsearch.part01.rar`, `mainsearch.part02.rar`, ... — a single archive too large for one part). To set it up:
 
@@ -118,22 +129,20 @@ This produces random vectors with no real OOD structure — the *numbers* are me
    ```bash
    unrar x mainsearch.part01.rar
    ```
-3. Convert the extracted base/query/ground-truth arrays into this repo's VIBE HDF5 schema (§4, table above) using the conversion snippet below, and save the result as `dataset_benchmark/MainSearch-11M.hdf5`.
+3. Convert the extracted base/query/ground-truth arrays into this repo's VIBE HDF5 schema (§4, table above) using the conversion snippet below, and save the result as exactly **`dataset_benchmark/mainsearch.hdf5`**.
 
-Once you have the raw base/query/ground-truth arrays for a dataset, convert them into this repo's schema (§4, table above) with a short script, e.g.:
+Once you have the raw base/query/ground-truth arrays for a dataset (ImageNet, LAION, COCO, or MainSearch), convert them into this repo's schema with a short script, e.g. for LAION:
 
 ```python
 import h5py, numpy as np
 
-with h5py.File("my_dataset.hdf5", "w") as f:
+with h5py.File("dataset_benchmark/laion.hdf5", "w") as f:   # <- exact target filename, not a placeholder
     f.create_dataset("train", data=base_vectors.astype(np.float32))
     f.create_dataset("test", data=test_queries.astype(np.float32))
     f.create_dataset("neighbors", data=test_ground_truth.astype(np.int64))
     f.create_dataset("learn", data=calibration_queries.astype(np.float32))
     f.create_dataset("learn_neighbors", data=calibration_ground_truth.astype(np.uint32))  # optional
 ```
-
-For the two **in-distribution (ID)** datasets (GloVe, ImageNet-ID), `learn`/`learn_neighbors` are simply a held-out partition of `train` itself (Sec. 4.1 of the paper: 200,000 vectors reserved as calibration queries, with GT recomputed by exact brute-force search over the remaining base set) rather than a separate OOD query stream.
 
 </details>
 
@@ -175,6 +184,7 @@ Each script is also fully usable standalone with `--help` for the complete list 
 | `scripts/run_figure9_query_ratio.py` | **Figure 9** — data efficiency / cold-start: QPS@99% vs. calibration query ratio (10–100%), Sec. 4.7 | `results/figure9/<dataset>_query_ratio_summary.csv` |
 | `scripts/run_table4_hardware_profile.py` | **Table 4** — L3 cache / CPU-time impact of Phase 1 reordering (`perf stat`), Sec. 4.4 | `results/table4/table4_hardware_profile.csv` |
 | `scripts/generate_dummy_data.py` | *(not a paper result)* | Synthetic datasets for the quick functionality test in §4.1 |
+| `scripts/prepare_id_datasets.py` | *(not a paper result)* | Converts raw GloVe / ImageNet-ID embeddings into `glove.hdf5` / `imagenet_id.hdf5` (§4.2) |
 | `scripts/common.py` | *(shared library)* | Dataset loading, ground-truth computation, and the default `ef_search` sweep used by every script above |
 
 ---

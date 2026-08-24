@@ -28,16 +28,17 @@ except ImportError:
 
 # Friendly dataset name -> .hdf5 basename (Table 1 in the paper).
 PAPER_DATASETS = {
-    "ImageNet": "imagenet-align-640-normalized",
-    "LAION": "LAION-512",
-    "COCO": "coco-nomic-768-normalized",
-    "MainSearch": "MainSearch-11M",
+    "ImageNet": "imagenet",
+    "LAION": "laion",
+    "COCO": "coco",
+    "MainSearch": "mainsearch",
 }
 
 # In-distribution datasets used for the zero-routing-penalty check (Sec. 4.7).
+# Prepared from their raw base/test files by scripts/prepare_id_datasets.py.
 ID_DATASETS = {
-    "GloVe": "glove-200-cosine-maphnsw",
-    "ImageNet-ID": "imagenet-clip-512-normalized-maphnsw",
+    "GloVe": "glove",
+    "ImageNet-ID": "imagenet_id",
 }
 
 
