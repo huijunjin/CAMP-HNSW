@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Reproduces the paper's results end to end: builds the C++ engine if
 # needed, then runs every reproduction script in scripts/ in order --
-# Table 5, Figure 4, Figure 6, Figure 7, Figure 8, Figure 9, then Table 4.
+# Table 5, Figure 4, Table 2/3, Figure 6, Figure 7, Figure 8, Figure 9,
+# then Table 4.
 #
 # Usage:
 #   ./scripts/run_all.sh
@@ -71,6 +72,9 @@ run_step "Table 5: Incremental Ablation Study" \
 
 run_step "Figure 4: Main Recall vs QPS Comparison" \
     "$REPO_ROOT/scripts/run_figure4_main_comparison.py" --output-dir "$OUTPUT_DIR/figure4"
+
+run_step "Table 2/3: Edge Composition and Shortcut Utility Analysis" \
+    "$REPO_ROOT/scripts/run_table3_shortcut_utility.py" --output-dir "$OUTPUT_DIR/table3"
 
 run_step "Figure 6: Cache Reordering Parameter Sensitivity" \
     "$REPO_ROOT/scripts/run_figure6_kmeans_tuning.py" --output-dir "$OUTPUT_DIR/figure6"

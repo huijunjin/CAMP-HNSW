@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# build_hnswlib.sh
-#   1) 루트 build/ 폴더 삭제 -> CMake + make -j
-#   2) python_bindings 내 build/dist/*.egg-info도 삭제
-#   3) pip uninstall hnswlib (중복 제거)
-#   4) pip install -e .
-#   => 수정사항 반영된 상태로 Jupyter에서 import 가능.
+# rebuild_hnswlib.sh -- clean rebuild of the hnswlib fork after editing
+# hnswlib/hnswalg.h or python_bindings/bindings.cpp:
+#   1) Remove the root build/ directory, then CMake + make -j
+#   2) Remove stale build/dist/*.egg-info under python_bindings/
+#   3) Uninstall any previously installed hnswlib
+#   4) Reinstall in editable mode (pip install -e .)
 
-set -e  # 에러 발생 시 스크립트 즉시 종료
+set -e  # exit immediately on error
 
 ROOT_DIR=$(pwd)
 
@@ -27,7 +27,6 @@ cd "$ROOT_DIR/python_bindings"
 
 rm -f hnswlib/*.so *.so
 
-# 만약 build, dist, egg-info 폴더가 있다면 삭제
 if [ -d build ]; then
     rm -rf build
 fi
@@ -39,7 +38,7 @@ if [ -d hnswlib.egg-info ]; then
 fi
 
 echo "=== (4) Uninstall old hnswlib from site-packages ==="
-pip uninstall -y hnswlib || true  # 혹시 install 안된 상태라도 OK
+pip uninstall -y hnswlib || true  # OK if it wasn't installed
 
 echo "=== (5) Re-install (editable mode) python bindings ==="
 pip install --no-build-isolation -e .

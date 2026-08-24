@@ -58,7 +58,7 @@ pip install --no-build-isolation -e src/hnswlib
 pip install --no-build-isolation -e src
 ```
 
-> **Why not `pip install hnswlib`?** This repository ships a *modified* fork of hnswlib (`src/hnswlib`) with CAMP-HNSW's core algorithm built directly into `hnswalg.h` — `injectShortcutsBinary()` (Joint Heuristic Pruning), the fixed-level-0 base graph, real-centroid entry point, and edge-activity profiling hooks. Installing the vanilla `hnswlib` package from PyPI would silently shadow this fork and every result would be wrong. `requirements.txt` deliberately excludes it, and `scripts/run_all.sh` (§5) builds both extensions automatically if they aren't importable yet.
+> **Why not `pip install hnswlib`?** `src/hnswlib` is a *modified* fork with CAMP-HNSW's core algorithm built directly into it (Joint Heuristic Pruning, real-centroid entry point, profiling hooks) — installing the vanilla PyPI package would silently shadow it and corrupt every result. `requirements.txt` excludes it on purpose; `scripts/run_all.sh` (§5) builds both extensions automatically if they aren't importable yet.
 
 **Portability note (AVX-512):** the build's compiler flags use `-march=native` only — CAMP-HNSW does **not** hardcode `-mavx512f`/`-mavx512cd`/etc. `-march=native` already asks the compiler to auto-detect and use the best instruction set the *build machine* actually supports, AVX-512 included on hardware like the paper's Xeon w5-2465X. If a reviewer's machine lacks AVX-512, the build still succeeds and simply falls back to whatever the CPU does support (e.g. AVX2) — no illegal-instruction crashes, no manual flag-editing required.
 
@@ -106,6 +106,9 @@ This produces random vectors with no real OOD structure — the *numbers* are me
 | ImageNet-ID | `imagenet-clip-512-normalized-maphnsw.hdf5` | VIBE benchmark, as above (in-distribution counterpart to the ImageNet row) |
 | MainSearch | `MainSearch-11M.hdf5` | Large-scale industrial dataset introduced in NGFix (Hua et al., *Dynamically Fix Hardness for Efficient Approximate Nearest Neighbor Search*, PACMMOD 3(6), 2025), **publicly hosted on Zenodo: [zenodo.org/records/17257137](https://zenodo.org/records/17257137)**. See the setup instructions below. |
 
+<details>
+<summary><strong>Real dataset setup instructions</strong> (VIBE toolkit for the first five, Zenodo + conversion for MainSearch)</summary>
+
 **Setting up ImageNet, LAION, COCO, GloVe, and ImageNet-ID (via VIBE):** these five datasets are all generated using the official **VIBE (Vector Index Benchmark for Embeddings)** toolkit — **[github.com/vector-index-bench/vibe](https://github.com/vector-index-bench/vibe)** (Jääsaari et al., [arXiv:2505.17810](https://arxiv.org/abs/2505.17810)). Clone that repository and follow its own README to download and generate each dataset's embeddings and query split; VIBE ships the download/generation tooling directly, so this is the authoritative source rather than any link we could mirror here. Once you have the resulting base vectors, test queries, ground truth, and calibration ("learn") queries, convert them into this repo's schema with the snippet below and save as the filenames listed in the table (e.g. `dataset_benchmark/LAION-512.hdf5`). For the two ID datasets (GloVe, ImageNet-ID), see the in-distribution note below the conversion snippet for how `learn`/`learn_neighbors` are derived.
 
 **Setting up MainSearch:** the dataset is distributed on Zenodo as a set of split RAR archives (`mainsearch.part01.rar`, `mainsearch.part02.rar`, ... — a single archive too large for one part). To set it up:
@@ -132,6 +135,8 @@ with h5py.File("my_dataset.hdf5", "w") as f:
 
 For the two **in-distribution (ID)** datasets (GloVe, ImageNet-ID), `learn`/`learn_neighbors` are simply a held-out partition of `train` itself (Sec. 4.1 of the paper: 200,000 vectors reserved as calibration queries, with GT recomputed by exact brute-force search over the remaining base set) rather than a separate OOD query stream.
 
+</details>
+
 Place every `.hdf5` file under `./dataset_benchmark/` (or point `--datasets-dir` / `DATASETS_DIR` at wherever you keep them — see §5).
 
 ---
@@ -144,7 +149,7 @@ Place every `.hdf5` file under `./dataset_benchmark/` (or point `--datasets-dir`
 bash scripts/run_all.sh
 ```
 
-This single command builds the C++ engine if it isn't built yet, then runs **every** reproduction script below in sequence — Table 5, Figure 4, Figure 6, Figure 7, Figure 8, Figure 9, then Table 4 — against whatever datasets it finds under `./dataset_benchmark/`. Missing individual dataset files are skipped per-dataset with a warning rather than aborting the run, and Table 4 (which needs the Linux `perf` tool) degrades gracefully with a clear message if `perf` is unavailable or unauthorized — every other result still completes.
+This single command builds the C++ engine if it isn't built yet, then runs **every** reproduction script below in sequence — Table 5, Figure 4, Table 2/3, Figure 6, Figure 7, Figure 8, Figure 9, then Table 4 — against whatever datasets it finds under `./dataset_benchmark/`. Missing individual dataset files are skipped per-dataset with a warning rather than aborting the run, and Table 4 (which needs the Linux `perf` tool) degrades gracefully with a clear message if `perf` is unavailable or unauthorized — every other result still completes.
 
 ```bash
 # Point at a real dataset directory and a custom output location
@@ -163,6 +168,7 @@ Each script is also fully usable standalone with `--help` for the complete list 
 |---|---|---|
 | `scripts/run_table5_ablation.py` | **Table 5** — incremental ablation (Base HNSW → Naive Injection → Candidate Pruning → Joint Pruning → + Memory Reorder → Phase 1 Only), Sec. 4.5 | `results/table5/final_ablation_table.csv` + per-variant/per-run CSVs |
 | `scripts/run_figure4_main_comparison.py` | **Figure 4** — Recall@{1,10,100} vs QPS across ImageNet/LAION/COCO/MainSearch, Sec. 4.2 | `results/figure4/<dataset>/recall{1,10,100}_<dataset>_final_comparison.csv` |
+| `scripts/run_table3_shortcut_utility.py` | **Table 2** — edge composition before/after Joint Heuristic Pruning, and **Table 3** — shortcut access frequency + trap escape rate, Sec. 4.3 | `results/table3/table2_edge_composition.csv`, `results/table3/table3_shortcut_utility.csv` |
 | `scripts/run_figure6_kmeans_tuning.py` | **Figure 6** — Phase 1 sensitivity to MiniBatchKMeans sample ratio and cluster count K, Sec. 4.6 | `results/figure6/<dataset>_cache_reorder_grid_search_result.csv` |
 | `scripts/run_figure7_pareto_search.py` | **Figure 7** — global Pareto frontier of build time vs. recall over Phase 2's `ef_mine`/`N_mine`, Sec. 4.6 | `results/figure7/figure7_global_pareto_frontier.csv` + per-dataset grids |
 | `scripts/run_figure8_id_robustness.py` | **Figure 8** — "zero routing penalty" on in-distribution datasets (GloVe, ImageNet-ID), Sec. 4.7 | `results/figure8/<dataset>/recall10_<dataset>_final_comparison.csv` |
