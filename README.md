@@ -99,12 +99,14 @@ This produces random vectors with no real OOD structure — the *numbers* are me
 
 | Paper name | `.hdf5` filename (goes in `dataset_benchmark/`) | Source |
 |---|---|---|
-| ImageNet | `imagenet-align-640-normalized.hdf5` | Text-to-image embeddings + query split from the **VIBE benchmark** (Jääsaari et al., *VIBE: Vector Index Benchmark for Embeddings*, [arXiv:2505.17810](https://arxiv.org/abs/2505.17810)) |
+| ImageNet | `imagenet-align-640-normalized.hdf5` | Text-to-image embeddings + query split generated via the **VIBE benchmark** toolkit — see the setup instructions below |
 | LAION | `LAION-512.hdf5` | VIBE benchmark, as above |
 | COCO | `coco-nomic-768-normalized.hdf5` | VIBE benchmark, as above |
+| GloVe (ID) | `glove-200-cosine-maphnsw.hdf5` | VIBE benchmark, as above (used as an in-distribution control; see the note below the conversion snippet) |
+| ImageNet-ID | `imagenet-clip-512-normalized-maphnsw.hdf5` | VIBE benchmark, as above (in-distribution counterpart to the ImageNet row) |
 | MainSearch | `MainSearch-11M.hdf5` | Large-scale industrial dataset introduced in NGFix (Hua et al., *Dynamically Fix Hardness for Efficient Approximate Nearest Neighbor Search*, PACMMOD 3(6), 2025), **publicly hosted on Zenodo: [zenodo.org/records/17257137](https://zenodo.org/records/17257137)**. See the setup instructions below. |
-| GloVe (ID) | `glove-200-cosine-maphnsw.hdf5` | Standard word embeddings (Pennington et al., *GloVe: Global Vectors for Word Representation*, EMNLP 2014) — commonly distributed via [nlp.stanford.edu/projects/glove](https://nlp.stanford.edu/projects/glove/) or ANN-Benchmarks-style mirrors. |
-| ImageNet-ID | `imagenet-clip-512-normalized-maphnsw.hdf5` | Same source as ImageNet above, used as an in-distribution (query = base manifold) control instead of the OOD split. |
+
+**Setting up ImageNet, LAION, COCO, GloVe, and ImageNet-ID (via VIBE):** these five datasets are all generated using the official **VIBE (Vector Index Benchmark for Embeddings)** toolkit — **[github.com/vector-index-bench/vibe](https://github.com/vector-index-bench/vibe)** (Jääsaari et al., [arXiv:2505.17810](https://arxiv.org/abs/2505.17810)). Clone that repository and follow its own README to download and generate each dataset's embeddings and query split; VIBE ships the download/generation tooling directly, so this is the authoritative source rather than any link we could mirror here. Once you have the resulting base vectors, test queries, ground truth, and calibration ("learn") queries, convert them into this repo's schema with the snippet below and save as the filenames listed in the table (e.g. `dataset_benchmark/LAION-512.hdf5`). For the two ID datasets (GloVe, ImageNet-ID), see the in-distribution note below the conversion snippet for how `learn`/`learn_neighbors` are derived.
 
 **Setting up MainSearch:** the dataset is distributed on Zenodo as a set of split RAR archives (`mainsearch.part01.rar`, `mainsearch.part02.rar`, ... — a single archive too large for one part). To set it up:
 
