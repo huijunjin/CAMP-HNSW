@@ -119,7 +119,7 @@ void filter_and_save_cpp(
         std::vector<int> candidates;
         for (int j = start; j < end; j++) candidates.push_back(r_indices(j));
 
-        if (candidates.size() > budget * 2) {
+        if (candidates.size() > static_cast<size_t>(budget) * 2) {
              std::sort(candidates.begin(), candidates.end(), [&](int a, int b) {
                  float dist_a = compute_ip(&r_data(i, 0), &r_data(a, 0), dim);
                  float dist_b = compute_ip(&r_data(i, 0), &r_data(b, 0), dim);
@@ -136,7 +136,7 @@ void filter_and_save_cpp(
 
         std::vector<int> selected;
         for (auto& p : cand_dists) {
-            if (selected.size() >= budget) break;
+            if (selected.size() >= static_cast<size_t>(budget)) break;
             int cand_idx = p.second;
             float dist_to_base = p.first;
 
@@ -285,7 +285,7 @@ double mine_and_filter_cpp(
                 return a.first > b.first; // descending inner product
             });
 
-            if (cand_dists.size() > budget * 2) {
+            if (cand_dists.size() > static_cast<size_t>(budget) * 2) {
                 cand_dists.resize(budget * 2);
             }
 
@@ -296,7 +296,7 @@ double mine_and_filter_cpp(
                 // RNG heuristic: keep a candidate only if no previously
                 // accepted neighbor lies strictly closer to it than to i.
                 for (auto& p : cand_dists) {
-                    if (selected.size() >= budget) break;
+                    if (selected.size() >= static_cast<size_t>(budget)) break;
                     int cand_idx = p.second;
                     float dist_to_base = p.first;
 
@@ -313,7 +313,7 @@ double mine_and_filter_cpp(
             } else {
                 // Ablation: ignore RNG diversity, keep the closest `budget`.
                 for (auto& p : cand_dists) {
-                    if (selected.size() >= budget) break;
+                    if (selected.size() >= static_cast<size_t>(budget)) break;
                     selected.push_back(p.second);
                 }
             }

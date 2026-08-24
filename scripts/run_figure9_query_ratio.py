@@ -30,15 +30,11 @@ import ours_utils
 
 
 def qps_at_recall(res_dict, target_recall):
-    if not res_dict or not res_dict.get("recall"):
+    """Recall-matched QPS for one evaluate_hnsw_variant() result dict."""
+    if not res_dict:
         return np.nan
-    recalls = np.array(res_dict["recall"])
-    qps = np.array(res_dict["qps"])
-    order = np.argsort(recalls)
-    recalls, qps = recalls[order], qps[order]
-    if target_recall > recalls[-1]:
-        return np.nan
-    return float(np.interp(target_recall, recalls, qps))
+    return common.qps_at_recall(res_dict["recall"], res_dict["qps"],
+                                target_recall, default=np.nan)
 
 
 def run_dataset(dataset_key, dataset_file, args):
@@ -54,13 +50,14 @@ def run_dataset(dataset_key, dataset_file, args):
 
     raw_db, test_q, train_q, test_gt, train_gt = common.load_dataset(hdf5_path)
 
-    db, old_to_new, new_to_old, sorted_labels = ours_utils.reorder_dataset_by_clustering(
+    db, old_to_new, new_to_old = ours_utils.reorder_dataset_by_clustering(
         raw_db, num_clusters=args.num_clusters, sample_ratio=args.sample_ratio,
         n_init=args.n_init, max_iter=args.max_iter, batch_size=args.batch_size,
     )
     train_gt_remapped = old_to_new[train_gt]
 
-    base_index_path = os.path.join(out_dir, f"{dataset_key}_base.bin")
+    base_index_path = os.path.join(
+        out_dir, common.base_index_filename(dataset_key, args.m, args.ef_construction))
     miner = Ours_Miner(m=args.m, ef_construction=args.ef_construction, dim=db.shape[1])
     if os.path.exists(base_index_path):
         miner.load_index(base_index_path, db)
@@ -106,9 +103,10 @@ def run_dataset(dataset_key, dataset_file, args):
                                       "QPS@95": qps_at_recall(res_roar, 95.0),
                                       "QPS@99": qps_at_recall(res_roar, 99.0)})
 
-        shortcut_path = os.path.join(out_dir, f"{dataset_key}_shortcuts_r{ratio_pct}.bin")
-        miner.train_frequency_shortcuts(
-            sliced_train_q, sliced_train_gt_remapped, sorted_labels,
+        shortcut_path = os.path.join(out_dir, common.shortcut_filename(
+            dataset_key, args.budget, args.train_ef, args.top_k, suffix=f"r{ratio_pct}"))
+        miner.mine_shortcuts(
+            sliced_train_q, sliced_train_gt_remapped,
             budget=args.budget, train_ef=args.train_ef, top_k=args.top_k,
             output_path=shortcut_path,
         )

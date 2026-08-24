@@ -33,6 +33,8 @@ def reorder_dataset_by_clustering(db, num_clusters=256, sample_ratio=0.05, n_ini
     vector to its nearest centroid, and physically sorts the array by cluster
     label so that topologically adjacent nodes end up in adjacent memory
     (and therefore adjacent cache lines).
+
+    Returns: (sorted_db, old_to_new, new_to_old)
     """
     num_elements = len(db)
     if num_clusters is None:
@@ -73,7 +75,6 @@ def reorder_dataset_by_clustering(db, num_clusters=256, sample_ratio=0.05, n_ini
     # Physically pack the dataset by cluster label (Algorithm 1, lines 6-12).
     sorted_indices = np.argsort(cluster_labels)
     sorted_db = db[sorted_indices]
-    sorted_labels = cluster_labels[sorted_indices]
 
     # Old<->new ID mapping tables, needed to translate results back to the
     # original dataset IDs after search (Sec. 3.3).
@@ -82,7 +83,7 @@ def reorder_dataset_by_clustering(db, num_clusters=256, sample_ratio=0.05, n_ini
     new_to_old = sorted_indices.astype(np.uint32)
 
     print(f"[Reordering] Done in {time.time() - t0:.2f}s.")
-    return sorted_db, old_to_new, new_to_old, sorted_labels
+    return sorted_db, old_to_new, new_to_old
 
 
 # =========================================================
@@ -105,6 +106,10 @@ def run_roargraph_logic(db, train_q, train_gt, test_q, test_gt,
     os.makedirs(temp_dir, exist_ok=True)
     os.makedirs(temp_data_dir, exist_ok=True)
 
+    # The per-k files below MUST carry target_k in their name. The search
+    # results are cached (see the `res` check further down), so sharing one
+    # filename across k values would silently serve the first k's numbers
+    # for every subsequent k.
     p = {
         "base":  os.path.join(temp_dir, "roar_base.bin"),
         "query": os.path.join(temp_dir, "roar_query_train.bin"),
@@ -112,8 +117,8 @@ def run_roargraph_logic(db, train_q, train_gt, test_q, test_gt,
         "q_test": os.path.join(temp_dir, "roar_q_test.bin"),
         "gt_test": os.path.join(temp_dir, "roar_gt_test.bin"),
         "index": os.path.join(temp_dir, "roar.index"),
-        "res":   os.path.join(temp_dir, "roar_res.txt"),
-        "csv":   os.path.join(temp_data_dir, "roar_res.csv"),
+        "res":   os.path.join(temp_dir, f"roar_res_k{target_k}.txt"),
+        "csv":   os.path.join(temp_data_dir, f"roar_res_k{target_k}.csv"),
     }
 
     if not os.path.exists(p["base"]):
@@ -247,55 +252,3 @@ def evaluate_hnsw_variant(index, test_q, test_gt, label, ef_list, temp_data_dir,
     df.to_csv(csv_path, index=False)
     print(f"Results saved to: {csv_path}")
     return {"recall": df["Recall"].tolist(), "qps": df["QPS"].tolist()}
-
-
-def compare_results(temp_data_dir):
-    files = {
-        "HNSW": os.path.join(temp_data_dir, "hnsw_res.csv"),
-        "Ours": os.path.join(temp_data_dir, "ours_res.csv"),
-        "Roar": os.path.join(temp_data_dir, "roar_res.csv"),
-    }
-    dfs = []
-    for name, path in files.items():
-        if os.path.exists(path):
-            df = pd.read_csv(path)
-            df = df.rename(columns={
-                "Recall": f"Recall_{name}", "QPS": f"QPS_{name}",
-                "Avg_Visited": f"Vis_{name}", "Avg_Hops": f"Hop_{name}",
-                "Time": f"Time_{name}",
-            })
-            df["EF"] = df["EF"].astype(int)
-            dfs.append(df)
-
-    if not dfs:
-        return
-
-    merged_df = dfs[0]
-    for i in range(1, len(dfs)):
-        merged_df = pd.merge(merged_df, dfs[i], on="EF", how="outer")
-    merged_df = merged_df.sort_values("EF").reset_index(drop=True)
-
-    if "Time_Ours" in merged_df.columns and "Time_Roar" in merged_df.columns:
-        merged_df["Gap_Time"] = merged_df["Time_Ours"] - merged_df["Time_Roar"]
-    if "Recall_Ours" in merged_df.columns and "Recall_Roar" in merged_df.columns:
-        merged_df["Gap_Recall"] = merged_df["Recall_Ours"] - merged_df["Recall_Roar"]
-    if "QPS_Ours" in merged_df.columns and "QPS_Roar" in merged_df.columns:
-        merged_df["Gap_QPS%"] = (merged_df["QPS_Ours"] - merged_df["QPS_Roar"]) / merged_df["QPS_Roar"] * 100
-    if "Vis_Ours" in merged_df.columns and "Vis_Roar" in merged_df.columns:
-        merged_df["Gap_Vis%"] = (merged_df["Vis_Ours"] - merged_df["Vis_Roar"]) / merged_df["Vis_Roar"] * 100
-    if "Hop_Ours" in merged_df.columns and "Hop_Roar" in merged_df.columns:
-        merged_df["Gap_Hop"] = merged_df["Hop_Ours"] - merged_df["Hop_Roar"]
-
-    final_cols = ["EF"]
-    for col in ["Time_HNSW", "Time_Roar", "Time_Ours", "Gap_Time",
-                "Recall_HNSW", "Recall_Roar", "Recall_Ours", "Gap_Recall",
-                "QPS_HNSW", "QPS_Roar", "QPS_Ours", "Gap_QPS%",
-                "Vis_HNSW", "Vis_Roar", "Vis_Ours", "Gap_Vis%",
-                "Hop_HNSW", "Hop_Roar", "Hop_Ours", "Gap_Hop"]:
-        if col in merged_df.columns:
-            final_cols.append(col)
-
-    final_df = merged_df[final_cols].round(2)
-    merged_path = os.path.join(temp_data_dir, "final_comparison.csv")
-    final_df.to_csv(merged_path, index=False)
-    print(f"Combined table saved to: {merged_path}")

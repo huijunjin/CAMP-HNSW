@@ -1,6 +1,6 @@
 """Shared utilities for the CAMP-HNSW paper-reproduction scripts in this
-directory (run_figure4_main_comparison.py, run_table5_ablation.py,
-run_table4_hardware_profile.py).
+directory: dataset name maps, benchmark loading, cache-file naming, and the
+recall-matched QPS interpolation the result tables are read off.
 
 Importing this module adds `src/python/` to `sys.path`, so `ours_model`
 and `ours_utils` are importable without a separate `pip install`. The
@@ -104,7 +104,39 @@ def default_ef_search_list():
     )
 
 
-def qps_at_recall(df, recall_col, qps_col, target_recall):
+def base_index_filename(dataset_key, m, ef_construction):
+    """Cache filename for a built base HNSW index.
+
+    The construction parameters are part of the name on purpose: the scripts
+    reuse an existing index file instead of rebuilding, so a name that
+    ignored M / ef_construction would silently serve a stale index after the
+    reviewer changes those flags.
+    """
+    return f"{dataset_key}_base_M{m}_efc{ef_construction}.bin"
+
+
+def shortcut_filename(dataset_key, budget, train_ef, top_k, suffix=""):
+    """Cache filename for a mined shortcut set, keyed by the Phase 2/3
+    parameters that determine its contents (see base_index_filename for why).
+    `suffix` distinguishes otherwise-identical runs, e.g. Figure 9's
+    calibration-ratio sweep."""
+    name = f"{dataset_key}_shortcuts_b{budget}_ef{train_ef}_k{top_k}"
+    if suffix:
+        name += f"_{suffix}"
+    return name + ".bin"
+
+
+def _finite_curve(recalls, qps_values):
+    """(recall, qps) pairs as float arrays with non-finite entries dropped.
+    Merged comparison tables can carry NaN rows when two methods were
+    evaluated at different ef values."""
+    r = np.asarray(recalls, dtype=float)
+    q = np.asarray(qps_values, dtype=float)
+    keep = np.isfinite(r) & np.isfinite(q)
+    return r[keep], q[keep]
+
+
+def qps_at_recall(recalls, qps_values, target_recall, default=None):
     """Interpolates the QPS a (recall, qps) curve achieves at `target_recall`.
 
     This is the methodologically correct way to compare two methods'
@@ -112,20 +144,41 @@ def qps_at_recall(df, recall_col, qps_col, target_recall):
     with different edge sets reach a given recall at different ef values,
     so comparing their QPS at the same raw ef number silently compares them
     at two different operating points and can produce a misleading gap in
-    either direction. Returns None if the curve never reaches target_recall.
+    either direction. Returns `default` if the curve never reaches
+    target_recall.
     """
-    r = df[recall_col].to_numpy()
-    q = df[qps_col].to_numpy()
+    r, q = _finite_curve(recalls, qps_values)
+    if r.size == 0 or target_recall > r.max():
+        return default
+
     order = np.argsort(r)
-    r, q = r[order], q[order]
-    if target_recall > r.max():
-        return None
-    return float(np.interp(target_recall, r, q))
+    return float(np.interp(target_recall, r[order], q[order]))
 
 
-def resolve_dataset_path(datasets_dir, dataset_key, dataset_map):
-    """Maps a friendly dataset key (e.g. 'LAION') through `dataset_map` to
-    its .hdf5 path under `datasets_dir`, or None if the file is missing."""
-    dataset_file = dataset_map[dataset_key]
-    path = os.path.join(datasets_dir, f"{dataset_file}.hdf5")
-    return path if os.path.exists(path) else None
+def qps_at_recall_pareto(recalls, qps_values, target_recall, default=None):
+    """Like `qps_at_recall`, but first reduces the curve to its Pareto-optimal
+    frontier (the points no other point beats on both recall and QPS).
+
+    Raw ef sweeps are measured under timing noise, so an unlucky sample can
+    leave a point that is worse on both axes than another; interpolating
+    through those dips understates the achievable throughput. Table 5 reports
+    its QPS@95 / QPS@99 operating points off this frontier.
+    """
+    r, q = _finite_curve(recalls, qps_values)
+    if r.size == 0 or target_recall > r.max():
+        return default
+
+    # Walk from the fastest point down; keep a point only when it improves on
+    # the best recall seen so far.
+    frontier_r, frontier_q = [], []
+    best_recall = -np.inf
+    for i in np.argsort(-q):
+        if r[i] > best_recall:
+            best_recall = r[i]
+            frontier_r.append(r[i])
+            frontier_q.append(q[i])
+
+    order = np.argsort(frontier_r)
+    return float(np.interp(target_recall,
+                           np.asarray(frontier_r)[order],
+                           np.asarray(frontier_q)[order]))

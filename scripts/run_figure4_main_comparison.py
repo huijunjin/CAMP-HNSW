@@ -41,15 +41,14 @@ import ours_utils
 
 
 def evaluate_all_k(index, test_q, test_gt, id_mapper, label, csv_prefix, output_dir,
-                    ef_list, k_values, build_time):
-    per_k = {}
+                   ef_list, k_values, build_time):
+    """Sweeps ef_search at every requested Recall@K, writing one CSV per K."""
     for k in k_values:
-        per_k[k] = ours_utils.evaluate_hnsw_variant(
+        ours_utils.evaluate_hnsw_variant(
             index, test_q, test_gt, f"{label} (k={k})", ef_list, output_dir,
             id_mapper=id_mapper, csv_name=f"{csv_prefix}_k{k}.csv",
             build_time=build_time, target_k=k,
         )
-    return per_k
 
 
 def merge_final_comparison(out_dir, dataset_key, k, name_map):
@@ -92,7 +91,7 @@ def run_dataset(dataset_key, dataset_file, args):
     raw_db, test_q, train_q, test_gt, train_gt = common.load_dataset(hdf5_path)
 
     print("  [Phase 1] Cache-aligned memory reordering...")
-    db, old_to_new, new_to_old, sorted_labels = ours_utils.reorder_dataset_by_clustering(
+    db, old_to_new, new_to_old = ours_utils.reorder_dataset_by_clustering(
         raw_db, num_clusters=args.num_clusters, sample_ratio=args.sample_ratio,
         n_init=args.n_init, max_iter=args.max_iter, batch_size=args.batch_size,
     )
@@ -100,8 +99,9 @@ def run_dataset(dataset_key, dataset_file, args):
 
     # ---- HNSW baseline (reordered layout, no shortcuts) ----
     print("  [HNSW] Building base index...")
-    base_index_path = os.path.join(out_dir, f"{dataset_key}_base.bin")
-    miner = Ours_Miner(metric="ip", m=args.m, ef_construction=args.ef_construction, dim=db.shape[1])
+    base_index_path = os.path.join(
+        out_dir, common.base_index_filename(dataset_key, args.m, args.ef_construction))
+    miner = Ours_Miner(m=args.m, ef_construction=args.ef_construction, dim=db.shape[1])
     t0 = time.time()
     if os.path.exists(base_index_path):
         miner.load_index(base_index_path, db)
@@ -114,6 +114,7 @@ def run_dataset(dataset_key, dataset_file, args):
     evaluate_all_k(hnsw_index, test_q, test_gt, new_to_old, "HNSW", "hnsw_res", out_dir,
                    ef_list, args.k_values, hnsw_build_time)
     del hnsw_index
+    gc.collect()
 
     # ---- RoarGraph baseline (optional) ----
     if args.roar_dir and os.path.isdir(args.roar_dir):
@@ -132,11 +133,12 @@ def run_dataset(dataset_key, dataset_file, args):
 
     # ---- CAMP-HNSW (ours) ----
     print("  [Phase 2] Mining OOD shortcuts...")
-    shortcut_path = os.path.join(out_dir, f"{dataset_key}_shortcuts.bin")
+    shortcut_path = os.path.join(
+        out_dir, common.shortcut_filename(dataset_key, args.budget, args.train_ef, args.top_k))
     ours_additional_time = 0.0
     if not os.path.exists(shortcut_path):
-        ours_additional_time += miner.train_frequency_shortcuts(
-            train_q, train_gt_remapped, sorted_labels,
+        ours_additional_time += miner.mine_shortcuts(
+            train_q, train_gt_remapped,
             budget=args.budget, train_ef=args.train_ef, top_k=args.top_k,
             output_path=shortcut_path,
         )

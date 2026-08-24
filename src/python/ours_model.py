@@ -68,7 +68,7 @@ class Ours_Miner:
         self.index.inject_shortcuts_binary(shortcut_path)
         print("[Injector] Injection complete.")
 
-    def train_frequency_shortcuts(self, train_q, train_gt, cluster_labels, budget, train_ef, top_k, output_path):
+    def mine_shortcuts(self, train_q, train_gt, budget, train_ef, top_k, output_path):
         """Phase 2 (Algorithm 2): search the calibration queries against the
         base index, then hand the retrieved neighborhoods + ground truth to
         the fused C++ engine for mining, deduplication, and RNG-heuristic
@@ -88,11 +88,11 @@ class Ours_Miner:
         print(f"   [Phase 2a] Base HNSW search: {p1_time:.2f}s")
 
         # Phase 2b-d: mining + deduplication + filtering, fused in C++.
-        max_len = max(len(g) for g in train_gt)
-        gt_padded = np.full((len(train_gt), max_len), -1, dtype=np.int32)
-        for i, g in enumerate(train_gt):
-            length = min(len(g), max_len)
-            gt_padded[i, :length] = g[:length]
+        # The C++ side expects one rectangular int32 array, with -1 padding
+        # for queries that have fewer ground-truth neighbors than the widest
+        # row. Benchmark ground truth is already rectangular, so that case
+        # is just a dtype cast.
+        gt_padded = self._as_padded_gt(train_gt)
 
         print("   [Phase 2b-d] Running unified C++ engine (mine -> dedup -> filter)...")
         p2_pure_time = ours_backend.mine_and_filter(
@@ -111,14 +111,15 @@ class Ours_Miner:
 
         return pure_algo_time
 
-    def _filter_and_save_cpp(self, total_adj, budget, output_path):
-        print(f"[Miner] Filtering candidates (RNG heuristic) and saving to {output_path}...")
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    @staticmethod
+    def _as_padded_gt(train_gt):
+        """Ground truth as a rectangular int32 array, -1 padded (see caller)."""
+        gt = np.asarray(train_gt)
+        if gt.ndim == 2:
+            return gt.astype(np.int32, copy=False)
 
-        ours_backend.filter_and_save(
-            total_adj.indptr.astype(np.int32),
-            total_adj.indices.astype(np.int32),
-            self.data,
-            budget,
-            output_path,
-        )
+        max_len = max(len(row) for row in train_gt)
+        padded = np.full((len(train_gt), max_len), -1, dtype=np.int32)
+        for i, row in enumerate(train_gt):
+            padded[i, :len(row)] = row
+        return padded

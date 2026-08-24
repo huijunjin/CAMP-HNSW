@@ -63,8 +63,9 @@ def build_indexes(dataset_key, dataset_file, args, out_dir):
         raw_db = np.array(f["train"]).astype(np.float32)
     num_elements, dim = raw_db.shape
 
-    base_path = os.path.join(out_dir, f"{dataset_key}_base.bin")
-    reord_path = os.path.join(out_dir, f"{dataset_key}_reordered.bin")
+    base_path = os.path.join(
+        out_dir, common.base_index_filename(dataset_key, args.m, args.ef_construction))
+    reord_path = base_path.replace("_base_", "_reordered_")
 
     if not os.path.exists(base_path):
         print("  Building base (unreordered) HNSW...")
@@ -77,7 +78,7 @@ def build_indexes(dataset_key, dataset_file, args, out_dir):
 
     if not os.path.exists(reord_path):
         print("  Building Phase-1-reordered HNSW...")
-        sorted_db, _, _, _ = ours_utils.reorder_dataset_by_clustering(
+        sorted_db, _, _ = ours_utils.reorder_dataset_by_clustering(
             raw_db, num_clusters=args.num_clusters, sample_ratio=args.sample_ratio,
             n_init=args.n_init, max_iter=args.max_iter, batch_size=args.batch_size,
         )

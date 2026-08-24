@@ -60,13 +60,14 @@ def run_dataset(dataset_key, dataset_file, args):
     raw_db, test_q, train_q, test_gt, train_gt = common.load_dataset(hdf5_path)
     test_gt_k = test_gt[:, :args.target_k]
 
-    db, old_to_new, new_to_old, sorted_labels = ours_utils.reorder_dataset_by_clustering(
+    db, old_to_new, new_to_old = ours_utils.reorder_dataset_by_clustering(
         raw_db, num_clusters=args.num_clusters, sample_ratio=args.sample_ratio,
         n_init=args.n_init, max_iter=args.max_iter, batch_size=args.batch_size,
     )
     train_gt_remapped = old_to_new[train_gt]
 
-    base_index_path = os.path.join(out_dir, f"{dataset_key}_base.bin")
+    base_index_path = os.path.join(
+        out_dir, common.base_index_filename(dataset_key, args.m, args.ef_construction))
     miner = Ours_Miner(m=args.m, ef_construction=args.ef_construction, dim=db.shape[1])
     if os.path.exists(base_index_path):
         miner.load_index(base_index_path, db)
@@ -83,10 +84,11 @@ def run_dataset(dataset_key, dataset_file, args):
     gc.collect()
 
     # ---- Phase 2 + 3: mine and inject shortcuts (full CAMP-HNSW) ----
-    shortcut_path = os.path.join(out_dir, f"{dataset_key}_shortcuts.bin")
+    shortcut_path = os.path.join(
+        out_dir, common.shortcut_filename(dataset_key, args.budget, args.train_ef, args.top_k))
     if not os.path.exists(shortcut_path):
-        miner.train_frequency_shortcuts(
-            train_q, train_gt_remapped, sorted_labels,
+        miner.mine_shortcuts(
+            train_q, train_gt_remapped,
             budget=args.budget, train_ef=args.train_ef, top_k=args.top_k,
             output_path=shortcut_path,
         )

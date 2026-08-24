@@ -54,31 +54,6 @@ VARIANTS = [
 ]
 
 
-def interpolate_qps_at_recall(df, target_recall):
-    """Extracts the Pareto-optimal (recall, QPS) frontier and linearly
-    interpolates the QPS achievable at `target_recall`. Returns 0.0 if the
-    target recall is never reached (reported as "Fail" in the table)."""
-    if df.empty:
-        return np.nan
-
-    df_sorted = df.sort_values(by="qps", ascending=False).reset_index(drop=True)
-    pareto = []
-    max_recall = -1.0
-    for _, row in df_sorted.iterrows():
-        if row["recall"] > max_recall:
-            pareto.append(row)
-            max_recall = row["recall"]
-    df_pareto = pd.DataFrame(pareto).sort_values("recall")
-
-    recalls = df_pareto["recall"].values
-    qps_vals = df_pareto["qps"].values
-    if target_recall > recalls.max():
-        return 0.0
-    if target_recall in recalls:
-        return float(df_pareto[df_pareto["recall"] == target_recall]["qps"].iloc[0])
-    return float(np.interp(target_recall, recalls, qps_vals))
-
-
 def run_dataset(dataset_key, dataset_file, args, final_table_rows):
     print(f"\n{'=' * 70}\nDataset: {dataset_key} ({dataset_file})\n{'=' * 70}")
     hdf5_path = os.path.join(args.datasets_dir, f"{dataset_file}.hdf5")
@@ -94,7 +69,7 @@ def run_dataset(dataset_key, dataset_file, args, final_table_rows):
     num_nodes = len(raw_db)
 
     t0 = time.time()
-    reorder_db, old_to_new, new_to_old, sorted_labels = ours_utils.reorder_dataset_by_clustering(
+    reorder_db, old_to_new, new_to_old = ours_utils.reorder_dataset_by_clustering(
         raw_db, num_clusters=args.num_clusters, sample_ratio=args.sample_ratio,
         n_init=args.n_init, max_iter=args.max_iter, batch_size=args.batch_size,
     )
@@ -129,8 +104,8 @@ def run_dataset(dataset_key, dataset_file, args, final_table_rows):
 
         avg_degree = 0.0
         if var["mine"]:
-            pure_mine_time = miner.train_frequency_shortcuts(
-                train_q, current_train_gt, sorted_labels if var["reorder"] else None,
+            pure_mine_time = miner.mine_shortcuts(
+                train_q, current_train_gt,
                 budget=args.budget, train_ef=args.train_ef, top_k=args.top_k,
                 output_path=shortcut_path,
             )
@@ -171,9 +146,9 @@ def run_dataset(dataset_key, dataset_file, args, final_table_rows):
         })
         stats_df.to_csv(os.path.join(out_dir, f"{dataset_key}_v{v_id}_stats_summary.csv"), index=False)
 
-        df_res = pd.DataFrame({"recall": res["recall"], "qps": np.median(qps_array, axis=0).tolist()})
-        qps_95 = interpolate_qps_at_recall(df_res, 95.0)
-        qps_99 = interpolate_qps_at_recall(df_res, 99.0)
+        median_qps = np.median(qps_array, axis=0)
+        qps_95 = common.qps_at_recall_pareto(res["recall"], median_qps, 95.0, default=0.0)
+        qps_99 = common.qps_at_recall_pareto(res["recall"], median_qps, 99.0, default=0.0)
 
         final_table_rows.append({
             "Dataset": dataset_key,
@@ -200,7 +175,8 @@ def build_arg_parser():
                     choices=list(common.PAPER_DATASETS.keys()))
     p.add_argument("--output-dir", default="./results/table5")
     p.add_argument("--target-k", type=int, default=10, help="Recall@K basis for the table (paper: 10).")
-    p.add_argument("--num-runs", type=int, default=5, help="QPS repeats per variant (paper: 5, median reported).")
+    p.add_argument("--num-runs", type=int, default=5, choices=range(1, 21), metavar="[1-20]",
+                    help="QPS repeats per variant (paper: 5, median reported).")
 
     p.add_argument("--m", type=int, default=32)
     p.add_argument("--ef-construction", type=int, default=200)

@@ -84,8 +84,8 @@ def report_recall_matched_summary(key, args, targets=(90.0, 95.0, 97.0, 99.0)):
 
         print(f"\n  [Figure 8] Recall-matched QPS, {key} (k={k}):")
         for target in targets:
-            hnsw_qps = common.qps_at_recall(df, "Recall_HNSW", "QPS_HNSW", target)
-            ours_qps = common.qps_at_recall(df, "Recall_CAMP-HNSW", "QPS_CAMP-HNSW", target)
+            hnsw_qps = common.qps_at_recall(df["Recall_HNSW"], df["QPS_HNSW"], target)
+            ours_qps = common.qps_at_recall(df["Recall_CAMP-HNSW"], df["QPS_CAMP-HNSW"], target)
             if hnsw_qps is None or ours_qps is None:
                 print(f"    @Recall={target}%: not reached by one of the curves")
                 continue
