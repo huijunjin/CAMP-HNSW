@@ -4,7 +4,7 @@
 
 Official artifact for:
 
-> Huijun Jin and Sanghyun Park. **CAMP-HNSW: Hardware-Topological Co-Design for OOD-Robust ANNS via Cache Alignment and Targeted Rewiring.** PVLDB, 19(1), 2026.
+> Huijun Jin and Sanghyun Park. **CAMP-HNSW: Hardware-Topological Co-Design for OOD-Robust ANNS via Cache Alignment and Targeted Rewiring.** PVLDB, 20(2), 2026.
 
 [![VLDB 2027 Artifact](https://img.shields.io/badge/VLDB-Artifact%20Evaluation-blue)]()
 [![License](https://img.shields.io/badge/license-CC%20BY--NC--ND%204.0-lightgrey)]()
